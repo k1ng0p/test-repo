@@ -23,16 +23,19 @@ internal interface IconSlot {
 }
 
 /**
- * Shows the icons as a compound drawable at the end of the author's name, so they sit right after
- * the text and whatever is laid out after the name (the timestamp) is pushed along with them.
- * Works in any parent layout, as the name view itself just gets wider.
+ * Shows the icons as a compound drawable inside a text view that sits in the message header, so the
+ * view itself gets wider and whatever is laid out next to it moves along, in any parent layout.
+ * [atStart] puts them before the text (used on the timestamp, which follows the name and its tags),
+ * otherwise they go after it.
  */
 internal class NameIcons(
-    author: TextView,
+    target: TextView,
+    private val atStart: Boolean,
     private val onMissingResource: (String) -> Unit,
 ) : IconSlot {
-    private val author = WeakReference(author)
-    private val density = author.resources.displayMetrics.density
+    private val target = WeakReference(target)
+    private val density = target.resources.displayMetrics.density
+    private val index = if (atStart) 0 else 2
 
     override var messageId: String? = null
         private set
@@ -55,15 +58,19 @@ internal class NameIcons(
 
     // Compared with what the view really holds, as Discord can reset its drawables when it rebinds
     private fun sync(): Boolean {
-        val view = author.get() ?: return false
-        val ends = view.compoundDrawablesRelative
-        val current = ends[2]
+        val view = target.get() ?: return false
+        val source = view.compoundDrawablesRelative
+        val slots = arrayOfNulls<Drawable>(4)
+        for (i in 0..3) slots[i] = source[i]
+
+        val current = slots[index]
         val ours = current as? IconsDrawable
         val base = ours?.original ?: current
 
         if (wanted.isEmpty()) {
             if (ours == null) return false
-            view.setCompoundDrawablesRelative(ends[0], ends[1], base, ends[3])
+            slots[index] = base
+            view.setCompoundDrawablesRelative(slots[0], slots[1], slots[2], slots[3])
             return true
         }
         if (ours != null && ours.icons == wanted) return false
@@ -84,31 +91,33 @@ internal class NameIcons(
         }
 
         val next = if (glyphs.isEmpty()) base else {
-            IconsDrawable(base, wanted, glyphs, (ICON_GAP_DP * density).toInt())
+            IconsDrawable(base, wanted, glyphs, (ICON_GAP_DP * density).toInt(), atStart)
         }
         if (next === current) return false
-        view.setCompoundDrawablesRelative(ends[0], ends[1], next, ends[3])
+        slots[index] = next
+        view.setCompoundDrawablesRelative(slots[0], slots[1], slots[2], slots[3])
         return true
     }
 }
 
-/** The name's own end drawable, if it had one, followed by the platform icons. */
+private fun Drawable.boxWidth() = bounds.width().takeIf { it > 0 } ?: intrinsicWidth.coerceAtLeast(0)
+
+private fun Drawable.boxHeight() = bounds.height().takeIf { it > 0 } ?: intrinsicHeight.coerceAtLeast(0)
+
+/** The text view's own drawable for this slot, if it had one, together with the platform icons. */
 private class IconsDrawable(
     val original: Drawable?,
     val icons: List<PlatformIcon>,
-    private val glyphs: List<Drawable>,
+    glyphs: List<Drawable>,
     private val gap: Int,
+    private val iconsFirst: Boolean,
 ) : Drawable() {
-    private val originalWidth = original?.let { it.bounds.width().takeIf { w -> w > 0 } ?: it.intrinsicWidth.coerceAtLeast(0) } ?: 0
-    private val originalHeight = original?.let { it.bounds.height().takeIf { h -> h > 0 } ?: it.intrinsicHeight.coerceAtLeast(0) } ?: 0
-    private val totalWidth: Int
-    private val totalHeight: Int
+    private val items: List<Drawable> =
+        if (iconsFirst) glyphs + listOfNotNull(original) else listOfNotNull(original) + glyphs
+    private val totalWidth = items.sumOf { it.boxWidth() } + gap * items.size
+    private val totalHeight = items.maxOf { it.boxHeight() }
 
     init {
-        var x = originalWidth
-        for (glyph in glyphs) x += gap + glyph.bounds.width()
-        totalWidth = x
-        totalHeight = maxOf(originalHeight, glyphs.maxOf { it.bounds.height() })
         setBounds(0, 0, totalWidth, totalHeight)
     }
 
@@ -118,26 +127,20 @@ private class IconsDrawable(
 
     override fun draw(canvas: Canvas) {
         var x = 0
-        if (original != null) {
+        for (item in items) {
+            if (!iconsFirst) x += gap
+            val box = item.bounds
             canvas.save()
-            canvas.translate(0f, (totalHeight - originalHeight) / 2f)
-            original.draw(canvas)
+            canvas.translate((x - box.left).toFloat(), (totalHeight - item.boxHeight()) / 2f - box.top)
+            item.draw(canvas)
             canvas.restore()
-            x = originalWidth
-        }
-        for (glyph in glyphs) {
-            x += gap
-            canvas.save()
-            canvas.translate(x.toFloat(), (totalHeight - glyph.bounds.height()) / 2f)
-            glyph.draw(canvas)
-            canvas.restore()
-            x += glyph.bounds.width()
+            x += item.boxWidth()
+            if (iconsFirst) x += gap
         }
     }
 
     override fun setAlpha(alpha: Int) {
-        original?.alpha = alpha
-        glyphs.forEach { it.alpha = alpha }
+        items.forEach { it.alpha = alpha }
     }
 
     override fun setColorFilter(colorFilter: ColorFilter?) {

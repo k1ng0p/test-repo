@@ -47,7 +47,6 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
 
     // Main thread only
     private val reported = mutableSetOf<String>()
-    private var dumped = false
 
     private val unhooks: List<XC_MethodHook.Unhook>
 
@@ -76,14 +75,8 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
                 val showsAuthor = author.visibility == View.VISIBLE
                 val platforms = synchronized(icons) { icons[id] }.orEmpty()
 
-                if (!dumped && showsAuthor && platforms.isNotEmpty()) {
-                    dumped = true
-                    // Once, after layout, so the report shows where the name, role icon and server tag really sit
-                    mainHandler.postDelayed({ report("Header layout:\n" + StringBuilder().apply { describe(header, 0) }) }, 1500)
-                }
-
                 val slot = slots[view]
-                    ?: if (showsAuthor && platforms.isNotEmpty()) createSlot(view, author) ?: return else return
+                    ?: if (showsAuthor && platforms.isNotEmpty()) createSlot(view, header, author) ?: return else return
                 if (slot.bind(id, showsAuthor, platforms)) relayout(view)
             }
         }))
@@ -93,6 +86,7 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
     private class ViewIds(view: View) {
         val header = view.idOf("header")
         val authorName = view.idOf("author_name")
+        val timestamp = view.idOf("timestamp")
     }
 
     /** Stores icons from JS, and updates the strips already showing their messages. */
@@ -138,8 +132,9 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
         if (reported.add(message)) onError(IllegalStateException(message))
     }
 
-    private fun createSlot(view: RelativeLayout, author: View): IconSlot? {
+    private fun createSlot(view: RelativeLayout, header: ViewGroup, author: View): IconSlot? {
         val parent = author.parent as? ViewGroup ?: return null
+        val timestamp = ids?.timestamp?.takeIf { it != 0 }?.let { header.findViewById<View>(it) } as? TextView
         val onMissing = { name: String -> report("No drawable resource named \"$name\"") }
 
         val slot: IconSlot = when {
@@ -157,9 +152,13 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
                 strip
             }
 
-            // Anywhere else (ConstraintLayout...) the icons become part of the name's own text view,
-            // so whatever is laid out after the name (the timestamp) moves along with them
-            author is TextView -> NameIcons(author, onMissing)
+            // In the ConstraintLayout the name, server tag, role icon and the other badges are chained
+            // in front of the timestamp, so icons at the start of the timestamp land after all of them
+            // and the timestamp's own width pushes it along, with no constraints to edit
+            timestamp != null -> NameIcons(timestamp, true, onMissing)
+
+            // Failing that, they go right after the name itself
+            author is TextView -> NameIcons(author, false, onMissing)
 
             else -> {
                 report("The author name is a ${author.javaClass.name} in ${parent.javaClass.name}, which isn't supported")
@@ -179,20 +178,6 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
         val list = generateSequence(view.parent) { it.parent }.firstOrNull(chatListView::isInstance) as View? ?: return
         list.post { list.measureAndLayout() }
     }
-}
-
-private fun StringBuilder.describe(view: View, depth: Int) {
-    val entry = if (view.id == View.NO_ID) "-" else try {
-        view.resources.getResourceEntryName(view.id)
-    } catch (_: Exception) {
-        "?"
-    }
-    append("  ".repeat(depth)).append(view.javaClass.name).append(" id=").append(entry)
-        .append(" vis=").append(view.visibility)
-        .append(" [").append(view.left).append(',').append(view.top).append(',').append(view.right).append(',').append(view.bottom).append(']')
-    if (view is TextView) append(" textLen=").append(view.text.length).append(" endDrawable=").append(view.compoundDrawablesRelative[2] != null)
-    append('\n')
-    if (view is ViewGroup && depth < 4) for (i in 0 until view.childCount) describe(view.getChildAt(i), depth + 1)
 }
 
 @Suppress("DiscouragedApi")
