@@ -3,6 +3,7 @@ package me.k1ngop.valenced.platformindicators
 import android.content.Context
 import android.graphics.PorterDuff
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -17,24 +18,63 @@ internal data class PlatformIcon(val resource: String, val color: Int)
 internal class PlatformStrip(
     context: Context,
     private val onMissingResource: (String) -> Unit,
-) : LinearLayout(context), IconSlot {
-    override var messageId: String? = null
+) : LinearLayout(context) {
+    var messageId: String? = null
         private set
-    override var showsAuthor = false
+    var showsAuthor = false
         private set
 
     private var shown = emptyList<PlatformIcon>()
 
     private val density = context.resources.displayMetrics.density
 
+    private var host: View? = null
+    private var anchor: View? = null
+
     init {
         orientation = HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         visibility = GONE
+        addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> reposition() }
+    }
+
+    /** Draws the strip over [host] where [anchor] starts, and moves [anchor] along to make room. */
+    fun takePlaceOf(host: View, anchor: View) {
+        this.host = host
+        this.anchor = anchor
+        anchor.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> reposition() }
+    }
+
+    fun detach() {
+        anchor?.translationX = 0f
+        (parent as? ViewGroup)?.removeView(this)
+    }
+
+    private fun reposition() {
+        val host = host ?: return
+        val anchor = anchor ?: return
+        if (visibility != VISIBLE) {
+            anchor.translationX = 0f
+            return
+        }
+        if (width == 0) return
+
+        var x = 0
+        var y = 0
+        var view: View = anchor
+        while (view !== host) {
+            x += view.left
+            y += view.top
+            view = view.parent as? View ?: return
+        }
+
+        translationX = x.toFloat()
+        translationY = y + (anchor.height - height) / 2f
+        anchor.translationX = width + ICON_GAP_DP * density
     }
 
     /** Returns whether the icons changed, which means the row needs to be laid out again. */
-    override fun bind(messageId: String?, showsAuthor: Boolean, icons: List<PlatformIcon>): Boolean {
+    fun bind(messageId: String?, showsAuthor: Boolean, icons: List<PlatformIcon>): Boolean {
         this.messageId = messageId
         this.showsAuthor = showsAuthor
 
@@ -53,11 +93,8 @@ internal class PlatformStrip(
         }
 
         visibility = if (childCount > 0) VISIBLE else GONE
+        reposition()
         return true
-    }
-
-    override fun detach() {
-        (parent as? ViewGroup)?.removeView(this)
     }
 
     // Bundled JS assets are drawable resources of the app, named by what JS sent

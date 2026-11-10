@@ -7,7 +7,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.RelativeLayout
-import android.widget.TextView
 import app.valenced.xposed.api.DexFinder
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
@@ -25,7 +24,7 @@ private const val CACHE_CAPACITY = 2000
 
 private const val MARGIN_DP = 4f
 
-/** Shows the author's platform icons right after their name in chat messages, however the header is laid out. */
+/** Adds a [PlatformStrip] next to the author of chat messages whose author is on a known platform. */
 internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) -> Unit) {
     private val icons = object : LinkedHashMap<String, List<PlatformIcon>>(256, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<PlatformIcon>>) =
@@ -33,7 +32,7 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
     }
 
     // Main thread only
-    private val slots = WeakHashMap<RelativeLayout, IconSlot>()
+    private val strips = WeakHashMap<RelativeLayout, PlatformStrip>()
     private var ids: ViewIds? = null
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -75,9 +74,9 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
                 val showsAuthor = author.visibility == View.VISIBLE
                 val platforms = synchronized(icons) { icons[id] }.orEmpty()
 
-                val slot = slots[view]
-                    ?: if (showsAuthor && platforms.isNotEmpty()) createSlot(view, header, author) ?: return else return
-                if (slot.bind(id, showsAuthor, platforms)) relayout(view)
+                val strip = strips[view]
+                    ?: if (showsAuthor && platforms.isNotEmpty()) insertStrip(view, author, ids.timestamp) ?: return else return
+                if (strip.bind(id, showsAuthor, platforms)) relayout(view)
             }
         }))
     }
@@ -95,10 +94,10 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
         synchronized(icons) { icons.putAll(updates) }
 
         mainHandler.post {
-            for ((view, slot) in slots) {
-                val id = slot.messageId ?: continue
+            for ((view, strip) in strips) {
+                val id = strip.messageId ?: continue
                 val update = updates[id] ?: continue
-                if (slot.bind(id, slot.showsAuthor, update)) relayout(view)
+                if (strip.bind(id, strip.showsAuthor, update)) relayout(view)
             }
         }
     }
@@ -106,7 +105,7 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
     fun clear() {
         synchronized(icons) { icons.clear() }
         mainHandler.post {
-            for ((view, slot) in slots) if (slot.bind(null, false, emptyList())) relayout(view)
+            for ((view, strip) in strips) if (strip.bind(null, false, emptyList())) relayout(view)
         }
     }
 
@@ -114,11 +113,11 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
         for (unhook in unhooks) unhook.unhook()
         synchronized(icons) { icons.clear() }
         mainHandler.post {
-            for ((view, slot) in slots) {
-                slot.detach()
+            for ((view, strip) in strips) {
+                strip.detach()
                 relayout(view)
             }
-            slots.clear()
+            strips.clear()
         }
     }
 
@@ -132,42 +131,34 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
         if (reported.add(message)) onError(IllegalStateException(message))
     }
 
-    private fun createSlot(view: RelativeLayout, header: ViewGroup, author: View): IconSlot? {
+    private fun insertStrip(view: RelativeLayout, author: View, timestampId: Int): PlatformStrip? {
         val parent = author.parent as? ViewGroup ?: return null
-        val timestamp = ids?.timestamp?.takeIf { it != 0 }?.let { header.findViewById<View>(it) } as? TextView
-        val onMissing = { name: String -> report("No drawable resource named \"$name\"") }
+        val strip = PlatformStrip(view.context) { report("No drawable resource named \"$it\"") }
 
-        val slot: IconSlot = when {
-            // A plain row can simply take the strip as a sibling of the name
-            parent is LinearLayout && parent.orientation == LinearLayout.HORIZONTAL -> {
-                val strip = PlatformStrip(view.context, onMissing)
-                val margin = (MARGIN_DP * view.resources.displayMetrics.density).toInt()
-                parent.addView(strip, parent.indexOfChild(author) + 1, LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                ).apply {
-                    marginStart = margin
-                    gravity = Gravity.CENTER_VERTICAL
-                })
-                strip
-            }
-
-            // In the ConstraintLayout the name, server tag, role icon and the other badges are chained
-            // in front of the timestamp, so icons at the start of the timestamp land after all of them
-            // and the timestamp's own width pushes it along, with no constraints to edit
-            timestamp != null -> NameIcons(timestamp, true, onMissing)
-
-            // Failing that, they go right after the name itself
-            author is TextView -> NameIcons(author, false, onMissing)
-
-            else -> {
-                report("The author name is a ${author.javaClass.name} in ${parent.javaClass.name}, which isn't supported")
+        if (parent is LinearLayout && parent.orientation == LinearLayout.HORIZONTAL) {
+            val margin = (MARGIN_DP * view.resources.displayMetrics.density).toInt()
+            parent.addView(strip, parent.indexOfChild(author) + 1, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                marginStart = margin
+                gravity = Gravity.CENTER_VERTICAL
+            })
+        } else {
+            val timestamp = parent.findViewById<View>(timestampId)
+            if (timestamp == null) {
+                report("The author name is in ${parent.javaClass.name} and there is no timestamp next to it")
                 return null
             }
+            view.addView(strip, RelativeLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ))
+            strip.takePlaceOf(view, timestamp)
         }
 
-        slots[view] = slot
-        return slot
+        strips[view] = strip
+        return strip
     }
 
     /**
