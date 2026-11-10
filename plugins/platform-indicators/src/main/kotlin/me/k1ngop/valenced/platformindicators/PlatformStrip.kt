@@ -17,10 +17,10 @@ internal data class PlatformIcon(val resource: String, val color: Int)
 internal class PlatformStrip(
     context: Context,
     private val onMissingResource: (String) -> Unit,
-) : LinearLayout(context) {
-    var messageId: String? = null
+) : LinearLayout(context), IconSlot {
+    override var messageId: String? = null
         private set
-    var showsAuthor = false
+    override var showsAuthor = false
         private set
 
     private var shown = emptyList<PlatformIcon>()
@@ -34,7 +34,7 @@ internal class PlatformStrip(
     }
 
     /** Returns whether the icons changed, which means the row needs to be laid out again. */
-    fun bind(messageId: String?, showsAuthor: Boolean, icons: List<PlatformIcon>): Boolean {
+    override fun bind(messageId: String?, showsAuthor: Boolean, icons: List<PlatformIcon>): Boolean {
         this.messageId = messageId
         this.showsAuthor = showsAuthor
 
@@ -54,6 +54,10 @@ internal class PlatformStrip(
 
         visibility = if (childCount > 0) VISIBLE else GONE
         return true
+    }
+
+    override fun detach() {
+        (parent as? ViewGroup)?.removeView(this)
     }
 
     // Bundled JS assets are drawable resources of the app, named by what JS sent

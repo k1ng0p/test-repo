@@ -7,6 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.RelativeLayout
+import android.widget.TextView
 import app.valenced.xposed.api.DexFinder
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
@@ -24,7 +25,7 @@ private const val CACHE_CAPACITY = 2000
 
 private const val MARGIN_DP = 4f
 
-/** Adds a [PlatformStrip] next to the author of chat messages whose author is on a known platform. */
+/** Shows the author's platform icons right after their name in chat messages, however the header is laid out. */
 internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) -> Unit) {
     private val icons = object : LinkedHashMap<String, List<PlatformIcon>>(256, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<PlatformIcon>>) =
@@ -32,7 +33,7 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
     }
 
     // Main thread only
-    private val strips = WeakHashMap<RelativeLayout, PlatformStrip>()
+    private val slots = WeakHashMap<RelativeLayout, IconSlot>()
     private var ids: ViewIds? = null
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -74,9 +75,9 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
                 val showsAuthor = author.visibility == View.VISIBLE
                 val platforms = synchronized(icons) { icons[id] }.orEmpty()
 
-                val strip = strips[view]
-                    ?: if (showsAuthor && platforms.isNotEmpty()) insertStrip(view, header, author) ?: return else return
-                if (strip.bind(id, showsAuthor, platforms)) relayout(view)
+                val slot = slots[view]
+                    ?: if (showsAuthor && platforms.isNotEmpty()) createSlot(view, author) ?: return else return
+                if (slot.bind(id, showsAuthor, platforms)) relayout(view)
             }
         }))
     }
@@ -93,10 +94,10 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
         synchronized(icons) { icons.putAll(updates) }
 
         mainHandler.post {
-            for ((view, strip) in strips) {
-                val id = strip.messageId ?: continue
+            for ((view, slot) in slots) {
+                val id = slot.messageId ?: continue
                 val update = updates[id] ?: continue
-                if (strip.bind(id, strip.showsAuthor, update)) relayout(view)
+                if (slot.bind(id, slot.showsAuthor, update)) relayout(view)
             }
         }
     }
@@ -104,7 +105,7 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
     fun clear() {
         synchronized(icons) { icons.clear() }
         mainHandler.post {
-            for ((view, strip) in strips) if (strip.bind(null, false, emptyList())) relayout(view)
+            for ((view, slot) in slots) if (slot.bind(null, false, emptyList())) relayout(view)
         }
     }
 
@@ -112,11 +113,11 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
         for (unhook in unhooks) unhook.unhook()
         synchronized(icons) { icons.clear() }
         mainHandler.post {
-            for ((view, strip) in strips) {
-                (strip.parent as? ViewGroup)?.removeView(strip)
+            for ((view, slot) in slots) {
+                slot.detach()
                 relayout(view)
             }
-            strips.clear()
+            slots.clear()
         }
     }
 
@@ -130,34 +131,37 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
         if (reported.add(message)) onError(IllegalStateException(message))
     }
 
-    private fun insertStrip(view: RelativeLayout, header: View, author: View): PlatformStrip? {
+    private fun createSlot(view: RelativeLayout, author: View): IconSlot? {
         val parent = author.parent as? ViewGroup ?: return null
-        val strip = PlatformStrip(view.context) { report("No drawable resource named \"$it\"") }
-        val margin = (MARGIN_DP * view.resources.displayMetrics.density).toInt()
+        val onMissing = { name: String -> report("No drawable resource named \"$name\"") }
 
-        if (parent is LinearLayout && parent.orientation == LinearLayout.HORIZONTAL) {
-            parent.addView(strip, parent.indexOfChild(author) + 1, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                marginStart = margin
-                gravity = Gravity.CENTER_VERTICAL
-            })
-        } else {
-            // Children of other layouts need rules or constraints to be placed, so this lines up with the header's end instead
-            report("The author name is in ${parent.javaClass.name}, not a horizontal LinearLayout")
-            view.addView(strip, RelativeLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                addRule(RelativeLayout.ALIGN_TOP, header.id)
-                addRule(RelativeLayout.ALIGN_PARENT_END)
-                marginEnd = margin
-            })
+        val slot: IconSlot = when {
+            // A plain row can simply take the strip as a sibling of the name
+            parent is LinearLayout && parent.orientation == LinearLayout.HORIZONTAL -> {
+                val strip = PlatformStrip(view.context, onMissing)
+                val margin = (MARGIN_DP * view.resources.displayMetrics.density).toInt()
+                parent.addView(strip, parent.indexOfChild(author) + 1, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply {
+                    marginStart = margin
+                    gravity = Gravity.CENTER_VERTICAL
+                })
+                strip
+            }
+
+            // Anywhere else (ConstraintLayout...) the icons become part of the name's own text view,
+            // so whatever is laid out after the name (the timestamp) moves along with them
+            author is TextView -> NameIcons(author, onMissing)
+
+            else -> {
+                report("The author name is a ${author.javaClass.name} in ${parent.javaClass.name}, which isn't supported")
+                return null
+            }
         }
 
-        strips[view] = strip
-        return strip
+        slots[view] = slot
+        return slot
     }
 
     /**
