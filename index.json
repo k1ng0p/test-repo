@@ -187,7 +187,7 @@
       ],
       "icon": "UserPlatformIcon",
       "channels": {
-        "latest": "1.7.4"
+        "latest": "1.7.5"
       },
       "versions": {
         "1.7.0": {
@@ -246,6 +246,19 @@
           "url": "https://k1ng0p.github.io/test-repo/pool/k1ngop.platform-indicators@1.7.4.zip",
           "sha256": "4e09da66dbddbb46f85a39cfabf21ea3909203a9cf5635b89e1cd946e419d9b4",
           "size": 22774,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": ">=352.2"
+            }
+          }
+        },
+        "1.7.5": {
+          "url": "https://k1ng0p.github.io/test-repo/pool/k1ngop.platform-indicators@1.7.5.zip",
+          "sha256": "7a5b2810cd6e67d00a2a8f7f05e764a48895b9f620c191704eeba913b5d1a92c",
+          "size": 23648,
           "dependencies": {
             "valenced.api": {
               "version": ">=1 <2"
