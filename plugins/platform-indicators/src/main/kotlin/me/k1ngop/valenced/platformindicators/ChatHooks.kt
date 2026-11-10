@@ -47,6 +47,7 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
 
     // Main thread only
     private val reported = mutableSetOf<String>()
+    private var dumped = false
 
     private val unhooks: List<XC_MethodHook.Unhook>
 
@@ -74,6 +75,12 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
                 // Only messages that start a group show their author
                 val showsAuthor = author.visibility == View.VISIBLE
                 val platforms = synchronized(icons) { icons[id] }.orEmpty()
+
+                if (!dumped && showsAuthor && platforms.isNotEmpty()) {
+                    dumped = true
+                    // Once, after layout, so the report shows where the name, role icon and server tag really sit
+                    mainHandler.postDelayed({ report("Header layout:\n" + StringBuilder().apply { describe(header, 0) }) }, 1500)
+                }
 
                 val slot = slots[view]
                     ?: if (showsAuthor && platforms.isNotEmpty()) createSlot(view, author) ?: return else return
@@ -172,6 +179,20 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
         val list = generateSequence(view.parent) { it.parent }.firstOrNull(chatListView::isInstance) as View? ?: return
         list.post { list.measureAndLayout() }
     }
+}
+
+private fun StringBuilder.describe(view: View, depth: Int) {
+    val entry = if (view.id == View.NO_ID) "-" else try {
+        view.resources.getResourceEntryName(view.id)
+    } catch (_: Exception) {
+        "?"
+    }
+    append("  ".repeat(depth)).append(view.javaClass.name).append(" id=").append(entry)
+        .append(" vis=").append(view.visibility)
+        .append(" [").append(view.left).append(',').append(view.top).append(',').append(view.right).append(',').append(view.bottom).append(']')
+    if (view is TextView) append(" textLen=").append(view.text.length).append(" endDrawable=").append(view.compoundDrawablesRelative[2] != null)
+    append('\n')
+    if (view is ViewGroup && depth < 4) for (i in 0 until view.childCount) describe(view.getChildAt(i), depth + 1)
 }
 
 @Suppress("DiscouragedApi")
