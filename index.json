@@ -1,7 +1,7 @@
 {
   "format": 1,
-  "name": "My Plugin Repository",
-  "description": "Example plugin repository from the Valenced plugin template.",
+  "name": "Test repo mfs",
+  "description": "dont use ts fuckkkers",
   "plugins": {
     "com.example.always-errors": {
       "name": "Always Errors",
@@ -172,6 +172,34 @@
             },
             "valenced.api.themes": {
               "version": "*"
+            }
+          }
+        }
+      }
+    },
+    "k1ngop.platform-indicators": {
+      "name": "Platform Indicators",
+      "description": "Adds platform indicators (Desktop, Mobile, Web...) to users",
+      "author": "k1ng_op <641266820187160576>",
+      "contributors": [
+        "Martinz64",
+        "Palm <629368283354628116> (https://github.com/PalmDevs \"GitHub\")"
+      ],
+      "icon": "UserPlatformIcon",
+      "channels": {
+        "latest": "1.7.0"
+      },
+      "versions": {
+        "1.7.0": {
+          "url": "https://k1ng0p.github.io/test-repo/pool/k1ngop.platform-indicators@1.7.0.zip",
+          "sha256": "386c613c6733f38baa108e8319d5240845680b269b640caae55f860881c8f12a",
+          "size": 21962,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": ">=352.2"
             }
           }
         }
