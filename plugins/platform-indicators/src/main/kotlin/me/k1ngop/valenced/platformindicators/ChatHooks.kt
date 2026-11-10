@@ -46,6 +46,7 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
 
     // Main thread only
     private val reported = mutableSetOf<String>()
+    private var debugCount = 0
 
     private val unhooks: List<XC_MethodHook.Unhook>
 
@@ -74,9 +75,15 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
                 val showsAuthor = author.visibility == View.VISIBLE
                 val platforms = synchronized(icons) { icons[id] }.orEmpty()
 
+                debug("bind showsAuthor=$showsAuthor icons=${platforms.size} hasStrip=${strips[view] != null}")
                 val strip = strips[view]
                     ?: if (showsAuthor && platforms.isNotEmpty()) insertStrip(view, author, ids.timestamp) ?: return else return
-                if (strip.bind(id, showsAuthor, platforms)) relayout(view)
+                if (strip.bind(id, showsAuthor, platforms)) {
+                    relayout(view)
+                    mainHandler.postDelayed({
+                        debug("strip ${strip.width}x${strip.height} vis=${strip.visibility} tx=${strip.translationX} ty=${strip.translationY} children=${strip.childCount}")
+                    }, 800)
+                }
             }
         }))
     }
@@ -92,6 +99,7 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
     fun put(json: String) {
         val updates = JSONObject(json).let { obj -> obj.keys().asSequence().associateWith { parseIcons(obj.getJSONArray(it)) } }
         synchronized(icons) { icons.putAll(updates) }
+        mainHandler.post { debug("put ${updates.size} entries") }
 
         mainHandler.post {
             for ((view, strip) in strips) {
@@ -126,6 +134,10 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
         PlatformIcon(icon.getString(0), icon.getInt(1))
     }
 
+    private fun debug(text: String) {
+        if (debugCount < 15) report("[debug ${debugCount++}] $text")
+    }
+
     /** Surfaces a problem once, however many messages hit it. */
     private fun report(message: String) {
         if (reported.add(message)) onError(IllegalStateException(message))
@@ -157,6 +169,7 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
             strip.takePlaceOf(view, timestamp)
         }
 
+        debug("strip created in ${parent.javaClass.simpleName}")
         strips[view] = strip
         return strip
     }
