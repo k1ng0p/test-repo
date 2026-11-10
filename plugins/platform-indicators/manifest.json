@@ -1,0 +1,28 @@
+{
+	"format": 1,
+	"id": "k1ngop.platform-indicators",
+	"name": "Platform Indicators",
+	"description": "Adds platform indicators (Desktop, Mobile, Web...) to users",
+	"icon": "UserPlatformIcon",
+	"author": "k1ng_op <641266820187160576>",
+	"contributors": [
+		"Martinz64",
+		"Palm <629368283354628116> (https://github.com/PalmDevs \"GitHub\")"
+	],
+	"version": "1.7.0",
+	"dependencies": {
+		"valenced.api": {
+			"version": ">=1 <2"
+		},
+		"discord": {
+			"version": ">=352.2"
+		}
+	},
+	"dist": {
+		"script": "index.js",
+		"android": {
+			"path": "plugin.jar",
+			"class": "me.k1ngop.valenced.platformindicators.PlatformIndicators"
+		}
+	}
+}
