@@ -75,7 +75,7 @@ internal class ChatHooks(dexFinder: DexFinder, private val onError: (Throwable) 
                 val showsAuthor = author.visibility == View.VISIBLE
                 val platforms = synchronized(icons) { icons[id] }.orEmpty()
 
-                debug("bind showsAuthor=$showsAuthor icons=${platforms.size} hasStrip=${strips[view] != null}")
+                if (platforms.isNotEmpty()) debug("bind showsAuthor=$showsAuthor icons=${platforms.size} hasStrip=${strips[view] != null}")
                 val strip = strips[view]
                     ?: if (showsAuthor && platforms.isNotEmpty()) insertStrip(view, author, ids.timestamp) ?: return else return
                 if (strip.bind(id, showsAuthor, platforms)) {

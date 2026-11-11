@@ -9,7 +9,7 @@
 		"Martinz64",
 		"Palm <629368283354628116> (https://github.com/PalmDevs \"GitHub\")"
 	],
-	"version": "1.7.5",
+	"version": "1.7.6",
 	"dependencies": {
 		"valenced.api": {
 			"version": ">=1 <2"
