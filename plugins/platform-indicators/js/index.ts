@@ -118,7 +118,7 @@ export default plugin<{ jsonStorage: Settings }>({
 
 		if (plugin.startedLate) plugin.requireReload()
 
-		if (getSettings().chatIcons) patchChat(cleanup)
+		patchChat(cleanup)
 
 		cleanup(
 			getModules(withExactName('ChannelHeader'), mod => {

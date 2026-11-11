@@ -93,7 +93,7 @@ export default function patchChat(
 	cleanup: (...cleanups: (() => unknown)[]) => void,
 ) {
 	// Message ID to its author
-	debug('chat patch started')
+	debug(`chat patch started, chatIcons=${getSettings().chatIcons}`)
 	const authors = new Map<string, string>()
 	// Message ID to the icons native was last told about, as JSON
 	const sent = new Map<string, string>()
@@ -143,7 +143,8 @@ export default function patchChat(
 				after(prototype, 'generate', row => {
 					const message = row?.type === MessageRowType ? row.message : null
 					if (!message?.authorId) return row
-					debug('message row seen')
+					debug(`message row seen, chatIcons=${getSettings().chatIcons}`)
+					if (!getSettings().chatIcons) return row
 
 					try {
 						if (!authors.has(message.id)) {
