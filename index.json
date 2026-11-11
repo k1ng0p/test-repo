@@ -308,6 +308,29 @@
           }
         }
       }
+    },
+    "k1ngop.user-voice-show": {
+      "name": "User Voice Show",
+      "description": "Shows an indicator when a user is in a voice channel.",
+      "author": "k1ng_op <641266820187160576>",
+      "channels": {
+        "latest": "0.10.0"
+      },
+      "versions": {
+        "0.10.0": {
+          "url": "https://k1ng0p.github.io/test-repo/pool/k1ngop.user-voice-show@0.10.0.zip",
+          "sha256": "ca83017847527fa0a6f711c7184f4195e4a9ae4592bd0f2ed1f760fc8e7bd63c",
+          "size": 19419,
+          "dependencies": {
+            "valenced.api": {
+              "version": ">=1 <2"
+            },
+            "discord": {
+              "version": "*"
+            }
+          }
+        }
+      }
     }
   }
 }
