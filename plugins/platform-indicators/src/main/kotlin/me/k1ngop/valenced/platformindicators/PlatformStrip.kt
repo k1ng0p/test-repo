@@ -59,18 +59,27 @@ internal class PlatformStrip(
         }
         if (width == 0) return
 
+        val row = anchor.parent as? ViewGroup ?: return
         var x = 0
         var y = 0
-        var view: View = anchor
+        var view: View = row
         while (view !== host) {
             x += view.left
             y += view.top
             view = view.parent as? View ?: return
         }
 
-        translationX = x.toFloat()
-        translationY = y + (anchor.height - height) / 2f
-        anchor.translationX = width + ICON_GAP_DP * density
+        var previousRight = 0
+        for (i in 0 until row.childCount) {
+            val child = row.getChildAt(i)
+            if (child === anchor || child === this || child.visibility != VISIBLE) continue
+            if (child.right <= anchor.left) previousRight = maxOf(previousRight, child.right)
+        }
+
+        val gap = ICON_GAP_DP * density
+        translationX = x + previousRight + gap
+        translationY = y + anchor.top + (anchor.height - height) / 2f
+        anchor.translationX = width + gap
     }
 
     /** Returns whether the icons changed, which means the row needs to be laid out again. */

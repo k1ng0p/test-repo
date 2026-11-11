@@ -2,6 +2,7 @@ import { getModules } from '@valenced/modules/finders'
 import { withName } from '@valenced/modules/finders/filters'
 import { after } from '@valenced/patcher'
 import { Image, processColor } from 'react-native'
+import { connectDispatcher, requestPresence } from './members'
 import { clearChatIcons, putChatIcons } from './native'
 import {
 	findAsset,
@@ -25,16 +26,12 @@ interface MessageRow {
 	type?: number
 	message?: {
 		id: string
+		channelId?: string
 		authorId?: string
 	}
 }
 
 const MessageRowType = 1
-
-let debugCount = 0
-const debug = (text: string) => {
-	if (debugCount < 12) reportError(new Error(`[debug js ${debugCount++}] ${text}`))
-}
 
 /** Message rows tracked at once. */
 const Capacity = 2000
@@ -93,7 +90,6 @@ export default function patchChat(
 	cleanup: (...cleanups: (() => unknown)[]) => void,
 ) {
 	// Message ID to its author
-	debug(`chat patch started, chatIcons=${getSettings().chatIcons}`)
 	const authors = new Map<string, string>()
 	// Message ID to the icons native was last told about, as JSON
 	const sent = new Map<string, string>()
@@ -108,10 +104,7 @@ export default function patchChat(
 			if (!authorId) continue
 
 			let icons = byAuthor.get(authorId)
-			if (!icons) {
-				byAuthor.set(authorId, (icons = iconsOf(authorId)))
-				debug(`statuses=${JSON.stringify(getStatuses(authorId))} icons=${icons.length}`)
-			}
+			if (!icons) byAuthor.set(authorId, (icons = iconsOf(authorId)))
 
 			const json = JSON.stringify(icons)
 			if ((sent.get(id) ?? '[]') === json) continue
@@ -120,10 +113,7 @@ export default function patchChat(
 			updates[id] = icons
 		}
 
-		if (Object.keys(updates).length) {
-			debug(`putting ${Object.keys(updates).length} updates`)
-			putChatIcons(updates)
-		}
+		if (Object.keys(updates).length) putChatIcons(updates)
 	}
 
 	const update = () => {
@@ -136,6 +126,7 @@ export default function patchChat(
 
 	cleanup(
 		subscribe(update),
+		connectDispatcher(),
 		() => clearChatIcons(),
 		// modules/messages/native/renderer/RowGenerator.tsx
 		getModules(withName<RowManager>('RowManager'), ({ prototype }) => {
@@ -143,7 +134,6 @@ export default function patchChat(
 				after(prototype, 'generate', row => {
 					const message = row?.type === MessageRowType ? row.message : null
 					if (!message?.authorId) return row
-					debug(`message row seen, chatIcons=${getSettings().chatIcons}`)
 					if (!getSettings().chatIcons) return row
 
 					try {
@@ -157,6 +147,8 @@ export default function patchChat(
 							}
 						}
 
+						if (message.channelId)
+							requestPresence(message.channelId, message.authorId)
 						push([message.id])
 					} catch (e) {
 						reportError(e)
